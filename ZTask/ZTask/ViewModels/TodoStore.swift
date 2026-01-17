@@ -15,8 +15,17 @@ class TodoStore: ObservableObject {
 
     // MARK: - Computed Properties
 
+    var activeTodos: [Todo] {
+        todos.filter { !$0.isCompleted }
+    }
+
+    var completedTodos: [Todo] {
+        todos.filter { $0.isCompleted }
+            .sorted { ($0.dueDate ?? $0.createdAt) > ($1.dueDate ?? $1.createdAt) }
+    }
+
     var todayTodos: [Todo] {
-        todos.filter { todo in
+        activeTodos.filter { todo in
             guard let dueDate = todo.dueDate else {
                 return Calendar.current.isDateInToday(todo.createdAt)
             }
@@ -25,7 +34,7 @@ class TodoStore: ObservableObject {
     }
 
     var tomorrowTodos: [Todo] {
-        todos.filter { todo in
+        activeTodos.filter { todo in
             guard let dueDate = todo.dueDate else { return false }
             return Calendar.current.isDateInTomorrow(dueDate)
         }
@@ -39,7 +48,7 @@ class TodoStore: ObservableObject {
             return []
         }
 
-        return todos.filter { todo in
+        return activeTodos.filter { todo in
             guard let dueDate = todo.dueDate else { return false }
             let startOfDue = calendar.startOfDay(for: dueDate)
             return startOfDue >= twoDaysFromNow && startOfDue < weekFromNow
@@ -53,19 +62,19 @@ class TodoStore: ObservableObject {
             return []
         }
 
-        return todos.filter { todo in
+        return activeTodos.filter { todo in
             guard let dueDate = todo.dueDate else { return false }
             let startOfDue = calendar.startOfDay(for: dueDate)
             return startOfDue >= weekFromNow
         }.union(
-            todos.filter { todo in
+            activeTodos.filter { todo in
                 todo.dueDate == nil && !Calendar.current.isDateInToday(todo.createdAt)
             }
         )
     }
 
     var completedTodayCount: Int {
-        todayTodos.filter { $0.isCompleted }.count
+        0 // All completed are hidden
     }
 
     var totalTodayCount: Int {
@@ -94,8 +103,46 @@ class TodoStore: ObservableObject {
     func toggleComplete(_ todo: Todo) {
         if let index = todos.firstIndex(where: { $0.id == todo.id }) {
             todos[index].isCompleted.toggle()
+            if todos[index].isCompleted {
+                todos[index].completedAt = Date()
+            } else {
+                todos[index].completedAt = nil
+            }
             saveTodos()
         }
+    }
+
+    func moveTodo(_ todo: Todo, to section: TodoSection) {
+        guard let index = todos.firstIndex(where: { $0.id == todo.id }) else { return }
+
+        let calendar = Calendar.current
+        let now = Date()
+
+        switch section {
+        case .today:
+            todos[index].dueDate = now
+        case .tomorrow:
+            todos[index].dueDate = calendar.date(byAdding: .day, value: 1, to: now)
+        case .nextWeek:
+            todos[index].dueDate = calendar.date(byAdding: .day, value: 7, to: now)
+        case .later:
+            todos[index].dueDate = calendar.date(byAdding: .day, value: 14, to: now)
+        }
+
+        saveTodos()
+    }
+
+    func restoreTodo(_ todo: Todo) {
+        if let index = todos.firstIndex(where: { $0.id == todo.id }) {
+            todos[index].isCompleted = false
+            todos[index].completedAt = nil
+            saveTodos()
+        }
+    }
+
+    func clearCompleted() {
+        todos.removeAll { $0.isCompleted }
+        saveTodos()
     }
 
     // MARK: - Persistence

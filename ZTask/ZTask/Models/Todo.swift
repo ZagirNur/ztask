@@ -10,6 +10,7 @@ struct Todo: Identifiable, Codable, Equatable {
     var hasSubtasks: Bool
     var subtasks: [Subtask]
     var createdAt: Date
+    var completedAt: Date?
 
     init(
         id: UUID = UUID(),
@@ -20,7 +21,8 @@ struct Todo: Identifiable, Codable, Equatable {
         isRepeating: Bool = false,
         hasSubtasks: Bool = false,
         subtasks: [Subtask] = [],
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        completedAt: Date? = nil
     ) {
         self.id = id
         self.title = title
@@ -31,6 +33,7 @@ struct Todo: Identifiable, Codable, Equatable {
         self.hasSubtasks = hasSubtasks
         self.subtasks = subtasks
         self.createdAt = createdAt
+        self.completedAt = completedAt
     }
 }
 
