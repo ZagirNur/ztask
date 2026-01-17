@@ -5,7 +5,7 @@ struct ContentView: View {
     @State private var showMenu = false
     @State private var showAddTodo = false
     @State private var showCompletedTasks = false
-    @State private var draggingTodo: Todo?
+    @State private var draggingTodoId: UUID?
 
     var body: some View {
         NavigationStack {
@@ -24,7 +24,7 @@ struct ContentView: View {
                                 showDayLabel: false,
                                 showCounter: true,
                                 totalCount: todoStore.totalTodayCount,
-                                draggingTodo: $draggingTodo,
+                                draggingTodoId: $draggingTodoId,
                                 onToggle: { todoStore.toggleComplete($0) },
                                 onMove: { todoStore.moveTodo($0, to: .today) }
                             )
@@ -33,7 +33,7 @@ struct ContentView: View {
                                 section: .tomorrow,
                                 todos: todoStore.tomorrowTodos,
                                 showDayLabel: false,
-                                draggingTodo: $draggingTodo,
+                                draggingTodoId: $draggingTodoId,
                                 onToggle: { todoStore.toggleComplete($0) },
                                 onMove: { todoStore.moveTodo($0, to: .tomorrow) }
                             )
@@ -42,7 +42,7 @@ struct ContentView: View {
                                 section: .nextWeek,
                                 todos: todoStore.nextWeekTodos,
                                 showDayLabel: true,
-                                draggingTodo: $draggingTodo,
+                                draggingTodoId: $draggingTodoId,
                                 onToggle: { todoStore.toggleComplete($0) },
                                 onMove: { todoStore.moveTodo($0, to: .nextWeek) }
                             )
@@ -51,7 +51,7 @@ struct ContentView: View {
                                 section: .later,
                                 todos: todoStore.laterTodos,
                                 showDayLabel: false,
-                                draggingTodo: $draggingTodo,
+                                draggingTodoId: $draggingTodoId,
                                 onToggle: { todoStore.toggleComplete($0) },
                                 onMove: { todoStore.moveTodo($0, to: .later) }
                             )
@@ -83,16 +83,17 @@ struct ContentView: View {
 // MARK: - Drop Section
 
 struct DropSection: View {
+    @EnvironmentObject var todoStore: TodoStore
     let section: TodoSection
     let todos: [Todo]
     let showDayLabel: Bool
     var showCounter: Bool = false
     var totalCount: Int = 0
-    @Binding var draggingTodo: Todo?
+    @Binding var draggingTodoId: UUID?
     let onToggle: (Todo) -> Void
     let onMove: (Todo) -> Void
 
-    @State private var dropIndex: Int? = nil
+    @State private var isTargeted = false
 
     private var headerColor: Color {
         switch section {
@@ -101,10 +102,6 @@ struct DropSection: View {
         case .nextWeek: return .nextWeekHeader
         case .later: return .laterHeader
         }
-    }
-
-    private var isTargeted: Bool {
-        dropIndex != nil
     }
 
     var body: some View {
@@ -128,40 +125,34 @@ struct DropSection: View {
             .padding(.top, 24)
             .padding(.bottom, 12)
 
-            // Todos with drop zones between them
-            ForEach(Array(todos.enumerated()), id: \.element.id) { index, todo in
-                let isDragging = draggingTodo?.id == todo.id
+            // Todos
+            ForEach(todos) { todo in
+                let isDragging = draggingTodoId == todo.id
 
-                VStack(spacing: 0) {
-                    // Drop zone before this item
-                    if dropIndex == index && !isDragging {
-                        DropPlaceholder()
-                    }
-
-                    // The actual row
-                    if !isDragging {
-                        TodoRowWithDropZone(
-                            todo: todo,
-                            index: index,
-                            showDayLabel: showDayLabel,
-                            onToggle: { onToggle(todo) },
-                            onDragStart: { draggingTodo = todo },
-                            onDragEnd: { draggingTodo = nil }
-                        )
-                    }
+                TodoRowView(
+                    todo: todo,
+                    showDayLabel: showDayLabel,
+                    onToggle: { onToggle(todo) }
+                )
+                .opacity(isDragging ? 0.3 : 1.0)
+                .onDrag {
+                    draggingTodoId = todo.id
+                    let generator = UIImpactFeedbackGenerator(style: .medium)
+                    generator.impactOccurred()
+                    return NSItemProvider(object: todo.id.uuidString as NSString)
                 }
             }
 
-            // Drop zone at the end
-            if dropIndex == todos.count {
+            // Drop zone placeholder when section is targeted and empty or has items
+            if isTargeted {
                 DropPlaceholder()
             }
 
             // Empty section placeholder
-            if todos.isEmpty && draggingTodo == nil {
+            if todos.isEmpty && !isTargeted {
                 Rectangle()
                     .fill(Color.clear)
-                    .frame(height: 20)
+                    .frame(height: 40)
             }
         }
         .padding(8)
@@ -169,13 +160,25 @@ struct DropSection: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(isTargeted ? Color.accentCyan.opacity(0.08) : Color.clear)
         )
-        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: dropIndex)
-        .onDrop(of: [.text], delegate: SectionDropDelegate(
-            todos: todos,
-            draggingTodo: $draggingTodo,
-            dropIndex: $dropIndex,
-            onMove: onMove
-        ))
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isTargeted)
+        .onDrop(of: [.text], isTargeted: $isTargeted) { providers in
+            guard let todoId = draggingTodoId,
+                  let todo = findTodo(by: todoId) else {
+                return false
+            }
+
+            let generator = UIImpactFeedbackGenerator(style: .medium)
+            generator.impactOccurred()
+
+            onMove(todo)
+            draggingTodoId = nil
+            return true
+        }
+    }
+
+    private func findTodo(by id: UUID) -> Todo? {
+        // Search in all todos
+        return todoStore.todos.first { $0.id == id }
     }
 }
 
@@ -191,224 +194,7 @@ struct DropPlaceholder: View {
                     .stroke(Color.accentCyan.opacity(0.4), style: StrokeStyle(lineWidth: 2, dash: [6]))
             )
             .padding(.vertical, 4)
-            .transition(.asymmetric(
-                insertion: .scale(scale: 0.8).combined(with: .opacity),
-                removal: .scale(scale: 0.8).combined(with: .opacity)
-            ))
-    }
-}
-
-// MARK: - Todo Row With Drop Zone
-
-struct TodoRowWithDropZone: View {
-    let todo: Todo
-    let index: Int
-    let showDayLabel: Bool
-    let onToggle: () -> Void
-    let onDragStart: () -> Void
-    let onDragEnd: () -> Void
-
-    private var isScheduled: Bool {
-        todo.dueDate?.isInNextWeek ?? false
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            CheckboxView(
-                isChecked: todo.isCompleted,
-                isScheduled: isScheduled,
-                action: onToggle
-            )
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .top) {
-                    Text(todo.title)
-                        .font(.system(size: 16))
-                        .foregroundColor(.textPrimary)
-                        .lineLimit(2)
-
-                    if todo.hasSubtasks {
-                        Image(systemName: "list.bullet")
-                            .font(.system(size: 12))
-                            .foregroundColor(.textSecondary)
-                    }
-
-                    Spacer()
-
-                    if showDayLabel, let dueDate = todo.dueDate {
-                        Text(dueDate.shortDayName)
-                            .font(.system(size: 14))
-                            .foregroundColor(.textSecondary)
-                    }
-                }
-
-                if todo.isRepeating || todo.reminder != nil {
-                    HStack(spacing: 8) {
-                        if todo.isRepeating {
-                            Image(systemName: "arrow.2.squarepath")
-                                .font(.system(size: 12))
-                                .foregroundColor(.textSecondary)
-                        }
-                        if let reminder = todo.reminder {
-                            HStack(spacing: 4) {
-                                Image(systemName: "bell")
-                                    .font(.system(size: 12))
-                                Text(reminder.formattedReminder)
-                                    .font(.system(size: 12))
-                            }
-                            .foregroundColor(.textSecondary)
-                        }
-                    }
-                }
-            }
-        }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .onDrag {
-            let generator = UIImpactFeedbackGenerator(style: .medium)
-            generator.impactOccurred()
-            onDragStart()
-            return NSItemProvider(object: todo.id.uuidString as NSString)
-        } preview: {
-            DragPreview(todo: todo, showDayLabel: showDayLabel, onDragEnd: onDragEnd)
-        }
-    }
-}
-
-// MARK: - Section Drop Delegate
-
-struct SectionDropDelegate: DropDelegate {
-    let todos: [Todo]
-    @Binding var draggingTodo: Todo?
-    @Binding var dropIndex: Int?
-    let onMove: (Todo) -> Void
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        updateDropIndex(at: info.location)
-        return DropProposal(operation: .move)
-    }
-
-    func dropEntered(info: DropInfo) {
-        let generator = UIImpactFeedbackGenerator(style: .light)
-        generator.impactOccurred()
-        updateDropIndex(at: info.location)
-    }
-
-    func dropExited(info: DropInfo) {
-        dropIndex = nil
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        guard let todo = draggingTodo else { return false }
-
-        let generator = UIImpactFeedbackGenerator(style: .medium)
-        generator.impactOccurred()
-
-        onMove(todo)
-        dropIndex = nil
-        draggingTodo = nil
-        return true
-    }
-
-    private func updateDropIndex(at location: CGPoint) {
-        // Approximate row height
-        let rowHeight: CGFloat = 56
-        let headerHeight: CGFloat = 60
-
-        let y = location.y - headerHeight
-        var index = Int(y / rowHeight)
-
-        // Adjust for dragging todo if it's in this section
-        if let dragging = draggingTodo,
-           let draggingIndex = todos.firstIndex(where: { $0.id == dragging.id }) {
-            if index > draggingIndex {
-                index += 1
-            }
-        }
-
-        index = max(0, min(index, todos.count))
-
-        if dropIndex != index {
-            let generator = UIImpactFeedbackGenerator(style: .soft)
-            generator.impactOccurred()
-            dropIndex = index
-        }
-    }
-}
-
-// MARK: - Drag Preview
-
-struct DragPreview: View {
-    let todo: Todo
-    let showDayLabel: Bool
-    let onDragEnd: () -> Void
-
-    private var isScheduled: Bool {
-        todo.dueDate?.isInNextWeek ?? false
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            // Checkbox (visual only)
-            ZStack {
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(isScheduled ? Color.accentCyan : Color.textSecondary, lineWidth: 2)
-                    .frame(width: 24, height: 24)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .top) {
-                    Text(todo.title)
-                        .font(.system(size: 16))
-                        .foregroundColor(.textPrimary)
-                        .lineLimit(2)
-
-                    if todo.hasSubtasks {
-                        Image(systemName: "list.bullet")
-                            .font(.system(size: 12))
-                            .foregroundColor(.textSecondary)
-                    }
-
-                    Spacer()
-
-                    if showDayLabel, let dueDate = todo.dueDate {
-                        Text(dueDate.shortDayName)
-                            .font(.system(size: 14))
-                            .foregroundColor(.textSecondary)
-                    }
-                }
-
-                if todo.isRepeating || todo.reminder != nil {
-                    HStack(spacing: 8) {
-                        if todo.isRepeating {
-                            Image(systemName: "arrow.2.squarepath")
-                                .font(.system(size: 12))
-                                .foregroundColor(.textSecondary)
-                        }
-                        if let reminder = todo.reminder {
-                            HStack(spacing: 4) {
-                                Image(systemName: "bell")
-                                    .font(.system(size: 12))
-                                Text(reminder.formattedReminder)
-                                    .font(.system(size: 12))
-                            }
-                            .foregroundColor(.textSecondary)
-                        }
-                    }
-                }
-            }
-        }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 12)
-        .frame(width: UIScreen.main.bounds.width - 56, alignment: .leading)
-        .background(Color.cardBackground)
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.3), radius: 12, y: 6)
-        .onDisappear {
-            onDragEnd()
-        }
+            .transition(.scale(scale: 0.9).combined(with: .opacity))
     }
 }
 
