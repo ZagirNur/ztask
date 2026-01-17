@@ -267,7 +267,7 @@ struct TodoRowWithDropZone: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .draggable(todo.id.uuidString) {
-            DragPreview(title: todo.title, onDragEnd: onDragEnd)
+            DragPreview(todo: todo, showDayLabel: showDayLabel, onDragEnd: onDragEnd)
                 .onAppear {
                     let generator = UIImpactFeedbackGenerator(style: .medium)
                     generator.impactOccurred()
@@ -341,28 +341,72 @@ struct SectionDropDelegate: DropDelegate {
 // MARK: - Drag Preview
 
 struct DragPreview: View {
-    let title: String
+    let todo: Todo
+    let showDayLabel: Bool
     let onDragEnd: () -> Void
 
-    var body: some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 4)
-                .stroke(Color.accentCyan, lineWidth: 2)
-                .frame(width: 22, height: 22)
+    private var isScheduled: Bool {
+        todo.dueDate?.isInNextWeek ?? false
+    }
 
-            Text(title)
-                .font(.system(size: 16))
-                .foregroundColor(.textPrimary)
-                .lineLimit(1)
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            // Checkbox (visual only)
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(isScheduled ? Color.accentCyan : Color.textSecondary, lineWidth: 2)
+                    .frame(width: 24, height: 24)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .top) {
+                    Text(todo.title)
+                        .font(.system(size: 16))
+                        .foregroundColor(.textPrimary)
+                        .lineLimit(2)
+
+                    if todo.hasSubtasks {
+                        Image(systemName: "list.bullet")
+                            .font(.system(size: 12))
+                            .foregroundColor(.textSecondary)
+                    }
+
+                    Spacer()
+
+                    if showDayLabel, let dueDate = todo.dueDate {
+                        Text(dueDate.shortDayName)
+                            .font(.system(size: 14))
+                            .foregroundColor(.textSecondary)
+                    }
+                }
+
+                if todo.isRepeating || todo.reminder != nil {
+                    HStack(spacing: 8) {
+                        if todo.isRepeating {
+                            Image(systemName: "arrow.2.squarepath")
+                                .font(.system(size: 12))
+                                .foregroundColor(.textSecondary)
+                        }
+                        if let reminder = todo.reminder {
+                            HStack(spacing: 4) {
+                                Image(systemName: "bell")
+                                    .font(.system(size: 12))
+                                Text(reminder.formattedReminder)
+                                    .font(.system(size: 12))
+                            }
+                            .foregroundColor(.textSecondary)
+                        }
+                    }
+                }
+            }
         }
         .padding(.vertical, 12)
-        .padding(.horizontal, 16)
-        .frame(width: 300, alignment: .leading)
+        .padding(.horizontal, 12)
+        .frame(width: UIScreen.main.bounds.width - 56, alignment: .leading)
         .background(Color.cardBackground)
         .cornerRadius(12)
-        .shadow(color: .black.opacity(0.4), radius: 16, y: 8)
+        .shadow(color: .black.opacity(0.3), radius: 12, y: 6)
         .onDisappear {
-            // Reset dragging state when drag preview disappears (drag cancelled or completed)
             onDragEnd()
         }
     }
