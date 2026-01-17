@@ -121,51 +121,62 @@ class TodoStore: ObservableObject {
 
         // Today's todos
         let todayTodos = [
-            Todo(title: "Намаз", dueDate: now),
-            Todo(title: "Выйти гулять", dueDate: now),
-            Todo(title: "Завтрак", dueDate: now),
-            Todo(title: "Весы", dueDate: now),
-            Todo(title: "Умыться", dueDate: now)
+            Todo(title: "Утренняя пробежка", dueDate: now),
+            Todo(title: "Прочитать 30 страниц книги", dueDate: now),
+            Todo(title: "Позвонить родителям", dueDate: now),
+            Todo(title: "Оплатить интернет", dueDate: now)
         ]
 
-        // Tomorrow's todo
+        // Tomorrow's todos
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: now)!
         let tomorrowTodos = [
-            Todo(title: "Проснулся", dueDate: tomorrow)
+            Todo(title: "Встреча с Артемом в 14:00", dueDate: tomorrow),
+            Todo(title: "Сдать отчет", dueDate: tomorrow)
         ]
 
         // Next week todos
-        let nextSunday = calendar.date(byAdding: .day, value: 7, to: now)!
-        var components1 = calendar.dateComponents([.year, .month, .day], from: nextSunday)
-        components1.hour = 7
-        components1.minute = 0
-        let sundayMorning = calendar.date(from: components1)!
+        let monday = calendar.date(byAdding: .day, value: 3, to: now)!
+        var componentsGym = calendar.dateComponents([.year, .month, .day], from: monday)
+        componentsGym.hour = 19
+        componentsGym.minute = 0
+        let gymTime = calendar.date(from: componentsGym)!
 
-        var components2 = calendar.dateComponents([.year, .month, .day], from: nextSunday)
-        components2.hour = 22
-        components2.minute = 50
-        let sundayEvening = calendar.date(from: components2)!
+        let friday = calendar.date(byAdding: .day, value: 5, to: now)!
+        var componentsDentist = calendar.dateComponents([.year, .month, .day], from: friday)
+        componentsDentist.hour = 10
+        componentsDentist.minute = 30
+        let dentistTime = calendar.date(from: componentsDentist)!
+
+        let saturday = calendar.date(byAdding: .day, value: 6, to: now)!
 
         let nextWeekTodos = [
             Todo(
-                title: "Проснуться в 7, умыться, зубы, завтрак.",
-                dueDate: sundayMorning,
-                reminder: sundayMorning,
+                title: "Тренировка в зале",
+                dueDate: gymTime,
+                reminder: gymTime,
                 isRepeating: true
             ),
             Todo(
-                title: "Зарядка перед сном и подготовка",
-                dueDate: sundayEvening,
-                reminder: sundayEvening,
+                title: "Стоматолог - плановый осмотр",
+                dueDate: dentistTime,
+                reminder: dentistTime
+            ),
+            Todo(
+                title: "Уборка квартиры",
+                dueDate: saturday,
                 isRepeating: true
             )
         ]
 
         // Later todos
-        let laterDate = calendar.date(byAdding: .day, value: 14, to: now)!
+        let inTwoWeeks = calendar.date(byAdding: .day, value: 14, to: now)!
+        let inThreeWeeks = calendar.date(byAdding: .day, value: 21, to: now)!
+
         let laterTodos = [
-            Todo(title: "Купить билеты Гузель", dueDate: laterDate),
-            Todo(title: "Разобраться с гугллм", dueDate: laterDate, hasSubtasks: true)
+            Todo(title: "Обновить резюме", dueDate: inTwoWeeks, hasSubtasks: true),
+            Todo(title: "Записаться на курсы английского", dueDate: inTwoWeeks),
+            Todo(title: "Техосмотр машины", dueDate: inThreeWeeks),
+            Todo(title: "День рождения мамы - купить подарок", dueDate: inThreeWeeks)
         ]
 
         todos = todayTodos + tomorrowTodos + nextWeekTodos + laterTodos
