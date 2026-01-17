@@ -6,7 +6,6 @@ struct ContentView: View {
     @State private var showAddTodo = false
     @State private var showCompletedTasks = false
     @State private var draggingTodo: Todo?
-    @State private var dropTargetSection: TodoSection?
 
     var body: some View {
         NavigationStack {
@@ -19,82 +18,42 @@ struct ContentView: View {
 
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
-                            // Today Section
-                            TodoSectionView(
+                            DropSection(
                                 section: .today,
                                 todos: todoStore.todayTodos,
                                 showDayLabel: false,
-                                completedCount: todoStore.completedTodayCount,
+                                showCounter: true,
                                 totalCount: todoStore.totalTodayCount,
                                 draggingTodo: $draggingTodo,
-                                dropTargetSection: $dropTargetSection,
-                                onToggle: { todo in
-                                    withAnimation(.easeOut(duration: 0.3)) {
-                                        todoStore.toggleComplete(todo)
-                                    }
-                                },
-                                onMove: { todo in
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                        todoStore.moveTodo(todo, to: .today)
-                                    }
-                                }
+                                onToggle: { todoStore.toggleComplete($0) },
+                                onMove: { todoStore.moveTodo($0, to: .today) }
                             )
 
-                            // Tomorrow Section
-                            TodoSectionView(
+                            DropSection(
                                 section: .tomorrow,
                                 todos: todoStore.tomorrowTodos,
                                 showDayLabel: false,
                                 draggingTodo: $draggingTodo,
-                                dropTargetSection: $dropTargetSection,
-                                onToggle: { todo in
-                                    withAnimation(.easeOut(duration: 0.3)) {
-                                        todoStore.toggleComplete(todo)
-                                    }
-                                },
-                                onMove: { todo in
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                        todoStore.moveTodo(todo, to: .tomorrow)
-                                    }
-                                }
+                                onToggle: { todoStore.toggleComplete($0) },
+                                onMove: { todoStore.moveTodo($0, to: .tomorrow) }
                             )
 
-                            // Next Week Section
-                            TodoSectionView(
+                            DropSection(
                                 section: .nextWeek,
                                 todos: todoStore.nextWeekTodos,
                                 showDayLabel: true,
                                 draggingTodo: $draggingTodo,
-                                dropTargetSection: $dropTargetSection,
-                                onToggle: { todo in
-                                    withAnimation(.easeOut(duration: 0.3)) {
-                                        todoStore.toggleComplete(todo)
-                                    }
-                                },
-                                onMove: { todo in
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                        todoStore.moveTodo(todo, to: .nextWeek)
-                                    }
-                                }
+                                onToggle: { todoStore.toggleComplete($0) },
+                                onMove: { todoStore.moveTodo($0, to: .nextWeek) }
                             )
 
-                            // Later Section
-                            TodoSectionView(
+                            DropSection(
                                 section: .later,
                                 todos: todoStore.laterTodos,
                                 showDayLabel: false,
                                 draggingTodo: $draggingTodo,
-                                dropTargetSection: $dropTargetSection,
-                                onToggle: { todo in
-                                    withAnimation(.easeOut(duration: 0.3)) {
-                                        todoStore.toggleComplete(todo)
-                                    }
-                                },
-                                onMove: { todo in
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                        todoStore.moveTodo(todo, to: .later)
-                                    }
-                                }
+                                onToggle: { todoStore.toggleComplete($0) },
+                                onMove: { todoStore.moveTodo($0, to: .later) }
                             )
 
                             Spacer().frame(height: 100)
@@ -107,48 +66,33 @@ struct ContentView: View {
                     Spacer()
                     HStack {
                         Spacer()
-                        FloatingActionButton {
-                            showAddTodo = true
-                        }
-                        .padding(.trailing, 20)
-                        .padding(.bottom, 30)
+                        FloatingActionButton { showAddTodo = true }
+                            .padding(.trailing, 20)
+                            .padding(.bottom, 30)
                     }
                 }
 
-                SideMenuView(
-                    isShowing: $showMenu,
-                    showCompletedTasks: $showCompletedTasks
-                )
+                SideMenuView(isShowing: $showMenu, showCompletedTasks: $showCompletedTasks)
             }
-            .sheet(isPresented: $showAddTodo) {
-                AddTodoView()
-            }
-            .fullScreenCover(isPresented: $showCompletedTasks) {
-                CompletedTasksView()
-            }
+            .sheet(isPresented: $showAddTodo) { AddTodoView() }
+            .fullScreenCover(isPresented: $showCompletedTasks) { CompletedTasksView() }
         }
     }
 }
 
-// MARK: - Todo Section View
+// MARK: - Drop Section
 
-struct TodoSectionView: View {
+struct DropSection: View {
     let section: TodoSection
     let todos: [Todo]
     let showDayLabel: Bool
-    var completedCount: Int? = nil
-    var totalCount: Int? = nil
+    var showCounter: Bool = false
+    var totalCount: Int = 0
     @Binding var draggingTodo: Todo?
-    @Binding var dropTargetSection: TodoSection?
     let onToggle: (Todo) -> Void
     let onMove: (Todo) -> Void
 
-    private let impactMedium = UIImpactFeedbackGenerator(style: .medium)
-    private let impactLight = UIImpactFeedbackGenerator(style: .light)
-
-    private var isDropTarget: Bool {
-        dropTargetSection == section && draggingTodo != nil
-    }
+    @State private var isTargeted = false
 
     private var headerColor: Color {
         switch section {
@@ -161,299 +105,213 @@ struct TodoSectionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
+            // Section Header
             HStack(spacing: 12) {
                 Text(section.displayName)
                     .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(todos.isEmpty && draggingTodo == nil ? headerColor.opacity(0.4) : headerColor)
+                    .foregroundColor(headerColor)
 
-                if let completed = completedCount, let total = totalCount, section == .today, !todos.isEmpty {
-                    Text("\(completed)/\(total)")
+                if showCounter && totalCount > 0 {
+                    Text("0/\(totalCount)")
                         .font(.system(size: 14))
                         .foregroundColor(.textSecondary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
                         .background(Capsule().fill(Color.cardBackground))
                 }
-
                 Spacer()
             }
             .padding(.top, 24)
             .padding(.bottom, 12)
 
-            // Drop zone indicator at top
-            if isDropTarget && todos.isEmpty {
-                DropIndicator()
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            // Drop indicator when targeted and empty
+            if isTargeted && todos.isEmpty {
+                DropIndicatorLine()
             }
 
-            // Todo items
+            // Todos
             ForEach(todos) { todo in
                 let isDragging = draggingTodo?.id == todo.id
 
-                VStack(spacing: 0) {
-                    // Drop indicator above item
-                    if isDropTarget && !isDragging && todos.first?.id == todo.id {
-                        DropIndicator()
-                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                    }
-
-                    DraggableTodoRow(
-                        todo: todo,
-                        showDayLabel: showDayLabel,
-                        isDragging: isDragging,
-                        onToggle: { onToggle(todo) },
-                        onDragStarted: {
-                            impactMedium.impactOccurred()
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                draggingTodo = todo
-                            }
-                        },
-                        onDragEnded: {
-                            if let targetSection = dropTargetSection, let todo = draggingTodo {
-                                impactLight.impactOccurred()
-                                onMove(todo)
-                            }
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                draggingTodo = nil
-                                dropTargetSection = nil
-                            }
-                        }
-                    )
-                    .opacity(isDragging ? 0.5 : 1.0)
-                }
+                TodoDragRow(
+                    todo: todo,
+                    showDayLabel: showDayLabel,
+                    isDragging: isDragging,
+                    isTargeted: isTargeted && !isDragging,
+                    onToggle: { onToggle(todo) },
+                    onDragStart: { draggingTodo = todo },
+                    onDragEnd: { draggingTodo = nil }
+                )
             }
 
-            // Empty section drop zone
-            if todos.isEmpty && draggingTodo != nil {
-                Color.clear
-                    .frame(height: 50)
+            // Empty area for drop
+            if todos.isEmpty {
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(height: 44)
             }
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 4)
+        .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(isDropTarget ? Color.accentCyan.opacity(0.08) : Color.clear)
-                .animation(.easeInOut(duration: 0.2), value: isDropTarget)
+                .fill(isTargeted ? Color.accentCyan.opacity(0.1) : Color.clear)
         )
-        .onDrop(of: [.text], delegate: TodoSectionDropDelegate(
-            section: section,
-            draggingTodo: $draggingTodo,
-            dropTargetSection: $dropTargetSection,
-            onMove: onMove,
-            impactLight: impactLight
-        ))
-    }
-}
+        .dropDestination(for: String.self) { items, _ in
+            guard items.first != nil, let todo = draggingTodo else { return false }
 
-// MARK: - Drop Indicator
+            let generator = UIImpactFeedbackGenerator(style: .medium)
+            generator.impactOccurred()
 
-struct DropIndicator: View {
-    var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(Color.accentCyan)
-                .frame(width: 8, height: 8)
-
-            Rectangle()
-                .fill(Color.accentCyan)
-                .frame(height: 2)
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                onMove(todo)
+                draggingTodo = nil
+            }
+            return true
+        } isTargeted: { targeted in
+            if targeted && !isTargeted {
+                let generator = UIImpactFeedbackGenerator(style: .light)
+                generator.impactOccurred()
+            }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isTargeted = targeted
+            }
         }
-        .padding(.vertical, 4)
     }
 }
 
-// MARK: - Draggable Todo Row
+// MARK: - Todo Drag Row
 
-struct DraggableTodoRow: View {
+struct TodoDragRow: View {
     let todo: Todo
     let showDayLabel: Bool
     let isDragging: Bool
+    let isTargeted: Bool
     let onToggle: () -> Void
-    let onDragStarted: () -> Void
-    let onDragEnded: () -> Void
-
-    @State private var dragOffset: CGSize = .zero
-    @State private var isPressed = false
+    let onDragStart: () -> Void
+    let onDragEnd: () -> Void
 
     private var isScheduled: Bool {
         todo.dueDate?.isInNextWeek ?? false
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            CheckboxView(
-                isChecked: todo.isCompleted,
-                isScheduled: isScheduled,
-                action: onToggle
-            )
+        VStack(spacing: 0) {
+            // Show drop indicator above when section is targeted
+            if isTargeted {
+                DropIndicatorLine()
+                    .transition(.scale.combined(with: .opacity))
+            }
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .top) {
-                    Text(todo.title)
-                        .font(.system(size: 16))
-                        .foregroundColor(todo.isCompleted ? .textSecondary : .textPrimary)
-                        .strikethrough(todo.isCompleted)
-                        .lineLimit(2)
+            HStack(alignment: .top, spacing: 16) {
+                CheckboxView(
+                    isChecked: todo.isCompleted,
+                    isScheduled: isScheduled,
+                    action: onToggle
+                )
 
-                    if todo.hasSubtasks {
-                        Image(systemName: "list.bullet")
-                            .font(.system(size: 12))
-                            .foregroundColor(.textSecondary)
-                    }
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .top) {
+                        Text(todo.title)
+                            .font(.system(size: 16))
+                            .foregroundColor(.textPrimary)
+                            .lineLimit(2)
 
-                    Spacer()
-
-                    if showDayLabel, let dueDate = todo.dueDate {
-                        Text(dueDate.shortDayName)
-                            .font(.system(size: 14))
-                            .foregroundColor(.textSecondary)
-                    }
-                }
-
-                if todo.isRepeating || todo.reminder != nil {
-                    HStack(spacing: 8) {
-                        if todo.isRepeating {
-                            Image(systemName: "arrow.2.squarepath")
+                        if todo.hasSubtasks {
+                            Image(systemName: "list.bullet")
                                 .font(.system(size: 12))
                                 .foregroundColor(.textSecondary)
                         }
 
-                        if let reminder = todo.reminder {
-                            HStack(spacing: 4) {
-                                Image(systemName: "bell")
+                        Spacer()
+
+                        if showDayLabel, let dueDate = todo.dueDate {
+                            Text(dueDate.shortDayName)
+                                .font(.system(size: 14))
+                                .foregroundColor(.textSecondary)
+                        }
+                    }
+
+                    if todo.isRepeating || todo.reminder != nil {
+                        HStack(spacing: 8) {
+                            if todo.isRepeating {
+                                Image(systemName: "arrow.2.squarepath")
                                     .font(.system(size: 12))
-                                Text(reminder.formattedReminder)
-                                    .font(.system(size: 12))
+                                    .foregroundColor(.textSecondary)
                             }
-                            .foregroundColor(.textSecondary)
+                            if let reminder = todo.reminder {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "bell")
+                                        .font(.system(size: 12))
+                                    Text(reminder.formattedReminder)
+                                        .font(.system(size: 12))
+                                }
+                                .foregroundColor(.textSecondary)
+                            }
                         }
                     }
                 }
             }
-        }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(isDragging || isPressed ? Color.cardBackground : Color.clear)
-                .shadow(
-                    color: isDragging ? .black.opacity(0.3) : .clear,
-                    radius: isDragging ? 12 : 0,
-                    y: isDragging ? 6 : 0
-                )
-        )
-        .scaleEffect(isDragging ? 1.05 : isPressed ? 1.02 : 1.0)
-        .offset(dragOffset)
-        .zIndex(isDragging ? 100 : 0)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isDragging)
-        .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isPressed)
-        .contentShape(Rectangle())
-        .gesture(
-            LongPressGesture(minimumDuration: 0.2)
-                .onChanged { _ in
-                    withAnimation {
-                        isPressed = true
-                    }
-                }
-                .onEnded { _ in
-                    isPressed = false
-                    onDragStarted()
-                }
-                .sequenced(before: DragGesture(coordinateSpace: .global))
-                .onChanged { value in
-                    switch value {
-                    case .first(true):
-                        break
-                    case .second(true, let drag):
-                        if let drag = drag {
-                            dragOffset = drag.translation
-                        }
-                    default:
-                        break
-                    }
-                }
-                .onEnded { _ in
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        dragOffset = .zero
-                        isPressed = false
-                    }
-                    onDragEnded()
-                }
-        )
-        .draggable(todo.id.uuidString) {
-            // Drag preview
-            HStack(spacing: 12) {
-                Image(systemName: "line.3.horizontal")
-                    .foregroundColor(.textSecondary)
-                Text(todo.title)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.textPrimary)
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(Color.cardBackground)
-            .cornerRadius(10)
-            .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
-            .onAppear {
-                onDragStarted()
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isDragging ? Color.cardBackground : Color.clear)
+            )
+            .opacity(isDragging ? 0.6 : 1)
+            .scaleEffect(isDragging ? 0.98 : 1)
+            .contentShape(Rectangle())
+            .draggable(todo.id.uuidString) {
+                // Drag preview
+                DragPreview(title: todo.title)
+                    .onAppear {
+                        let generator = UIImpactFeedbackGenerator(style: .medium)
+                        generator.impactOccurred()
+                        onDragStart()
+                    }
             }
         }
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isTargeted)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isDragging)
     }
 }
 
-// MARK: - Section Drop Delegate
+// MARK: - Drop Indicator Line
 
-struct TodoSectionDropDelegate: DropDelegate {
-    let section: TodoSection
-    @Binding var draggingTodo: Todo?
-    @Binding var dropTargetSection: TodoSection?
-    let onMove: (Todo) -> Void
-    let impactLight: UIImpactFeedbackGenerator
+struct DropIndicatorLine: View {
+    var body: some View {
+        HStack(spacing: 0) {
+            Circle()
+                .fill(Color.accentCyan)
+                .frame(width: 10, height: 10)
 
-    func performDrop(info: DropInfo) -> Bool {
-        guard let todo = draggingTodo else { return false }
-
-        impactLight.impactOccurred()
-        onMove(todo)
-
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            draggingTodo = nil
-            dropTargetSection = nil
+            Rectangle()
+                .fill(Color.accentCyan)
+                .frame(height: 3)
         }
-
-        return true
+        .padding(.vertical, 6)
     }
+}
 
-    func dropEntered(info: DropInfo) {
-        guard draggingTodo != nil else { return }
+// MARK: - Drag Preview
 
-        if dropTargetSection != section {
-            impactLight.impactOccurred()
+struct DragPreview: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "line.3.horizontal")
+                .foregroundColor(.textSecondary)
+            Text(title)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(.textPrimary)
+                .lineLimit(1)
         }
-
-        withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-            dropTargetSection = section
-        }
-    }
-
-    func dropExited(info: DropInfo) {
-        if dropTargetSection == section {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-                dropTargetSection = nil
-            }
-        }
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        return DropProposal(operation: .move)
-    }
-
-    func validateDrop(info: DropInfo) -> Bool {
-        return draggingTodo != nil
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(Color.cardBackground)
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
     }
 }
 
