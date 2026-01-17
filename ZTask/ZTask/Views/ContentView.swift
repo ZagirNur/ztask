@@ -169,24 +169,9 @@ struct DropSection: View {
                 .fill(isTargeted ? Color.accentCyan.opacity(0.08) : Color.clear)
         )
         .animation(.spring(response: 0.25, dampingFraction: 0.8), value: dropIndex)
-        .dropDestination(for: String.self) { items, location in
-            guard items.first != nil, let todo = draggingTodo else { return false }
-
-            let generator = UIImpactFeedbackGenerator(style: .medium)
-            generator.impactOccurred()
-
-            onMove(todo)
-            dropIndex = nil
-            draggingTodo = nil
-            return true
-        } isTargeted: { targeted in
-            if !targeted {
-                dropIndex = nil
-            }
-        }
         .onDrop(of: [.text], delegate: SectionDropDelegate(
             todos: todos,
-            draggingTodo: draggingTodo,
+            draggingTodo: $draggingTodo,
             dropIndex: $dropIndex,
             onMove: onMove
         ))
@@ -294,7 +279,7 @@ struct TodoRowWithDropZone: View {
 
 struct SectionDropDelegate: DropDelegate {
     let todos: [Todo]
-    let draggingTodo: Todo?
+    @Binding var draggingTodo: Todo?
     @Binding var dropIndex: Int?
     let onMove: (Todo) -> Void
 
@@ -321,6 +306,7 @@ struct SectionDropDelegate: DropDelegate {
 
         onMove(todo)
         dropIndex = nil
+        draggingTodo = nil
         return true
     }
 
