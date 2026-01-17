@@ -266,13 +266,13 @@ struct TodoRowWithDropZone: View {
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .draggable(todo.id.uuidString) {
+        .onDrag {
+            let generator = UIImpactFeedbackGenerator(style: .medium)
+            generator.impactOccurred()
+            onDragStart()
+            return NSItemProvider(object: todo.id.uuidString as NSString)
+        } preview: {
             DragPreview(todo: todo, showDayLabel: showDayLabel, onDragEnd: onDragEnd)
-                .onAppear {
-                    let generator = UIImpactFeedbackGenerator(style: .medium)
-                    generator.impactOccurred()
-                    onDragStart()
-                }
         }
     }
 }
