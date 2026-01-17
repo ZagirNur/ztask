@@ -124,27 +124,25 @@ struct DropSection: View {
             .padding(.top, 24)
             .padding(.bottom, 12)
 
-            // Drop indicator when targeted and empty
-            if isTargeted && todos.isEmpty {
-                DropIndicatorLine()
-            }
-
             // Todos
             ForEach(todos) { todo in
                 let isDragging = draggingTodo?.id == todo.id
 
-                TodoDragRow(
+                TodoRow(
                     todo: todo,
                     showDayLabel: showDayLabel,
                     isDragging: isDragging,
-                    isTargeted: isTargeted && !isDragging,
                     onToggle: { onToggle(todo) },
                     onDragStart: { draggingTodo = todo },
                     onDragEnd: { draggingTodo = nil }
                 )
+                // When this item is being dragged, collapse its space
+                .frame(height: isDragging ? 0 : nil)
+                .opacity(isDragging ? 0 : 1)
+                .clipped()
             }
 
-            // Empty area for drop
+            // Empty area for drop when section has no items
             if todos.isEmpty {
                 Rectangle()
                     .fill(Color.clear)
@@ -156,36 +154,33 @@ struct DropSection: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(isTargeted ? Color.accentCyan.opacity(0.1) : Color.clear)
         )
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: draggingTodo?.id)
+        .animation(.easeInOut(duration: 0.2), value: isTargeted)
         .dropDestination(for: String.self) { items, _ in
             guard items.first != nil, let todo = draggingTodo else { return false }
 
             let generator = UIImpactFeedbackGenerator(style: .medium)
             generator.impactOccurred()
 
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                onMove(todo)
-                draggingTodo = nil
-            }
+            onMove(todo)
+            draggingTodo = nil
             return true
         } isTargeted: { targeted in
             if targeted && !isTargeted {
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
             }
-            withAnimation(.easeInOut(duration: 0.2)) {
-                isTargeted = targeted
-            }
+            isTargeted = targeted
         }
     }
 }
 
-// MARK: - Todo Drag Row
+// MARK: - Todo Row
 
-struct TodoDragRow: View {
+struct TodoRow: View {
     let todo: Todo
     let showDayLabel: Bool
     let isDragging: Bool
-    let isTargeted: Bool
     let onToggle: () -> Void
     let onDragStart: () -> Void
     let onDragEnd: () -> Void
@@ -195,101 +190,68 @@ struct TodoDragRow: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Show drop indicator above when section is targeted
-            if isTargeted {
-                DropIndicatorLine()
-                    .transition(.scale.combined(with: .opacity))
-            }
+        HStack(alignment: .top, spacing: 16) {
+            CheckboxView(
+                isChecked: todo.isCompleted,
+                isScheduled: isScheduled,
+                action: onToggle
+            )
 
-            HStack(alignment: .top, spacing: 16) {
-                CheckboxView(
-                    isChecked: todo.isCompleted,
-                    isScheduled: isScheduled,
-                    action: onToggle
-                )
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .top) {
+                    Text(todo.title)
+                        .font(.system(size: 16))
+                        .foregroundColor(.textPrimary)
+                        .lineLimit(2)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .top) {
-                        Text(todo.title)
-                            .font(.system(size: 16))
-                            .foregroundColor(.textPrimary)
-                            .lineLimit(2)
+                    if todo.hasSubtasks {
+                        Image(systemName: "list.bullet")
+                            .font(.system(size: 12))
+                            .foregroundColor(.textSecondary)
+                    }
 
-                        if todo.hasSubtasks {
-                            Image(systemName: "list.bullet")
+                    Spacer()
+
+                    if showDayLabel, let dueDate = todo.dueDate {
+                        Text(dueDate.shortDayName)
+                            .font(.system(size: 14))
+                            .foregroundColor(.textSecondary)
+                    }
+                }
+
+                if todo.isRepeating || todo.reminder != nil {
+                    HStack(spacing: 8) {
+                        if todo.isRepeating {
+                            Image(systemName: "arrow.2.squarepath")
                                 .font(.system(size: 12))
                                 .foregroundColor(.textSecondary)
                         }
-
-                        Spacer()
-
-                        if showDayLabel, let dueDate = todo.dueDate {
-                            Text(dueDate.shortDayName)
-                                .font(.system(size: 14))
-                                .foregroundColor(.textSecondary)
-                        }
-                    }
-
-                    if todo.isRepeating || todo.reminder != nil {
-                        HStack(spacing: 8) {
-                            if todo.isRepeating {
-                                Image(systemName: "arrow.2.squarepath")
+                        if let reminder = todo.reminder {
+                            HStack(spacing: 4) {
+                                Image(systemName: "bell")
                                     .font(.system(size: 12))
-                                    .foregroundColor(.textSecondary)
+                                Text(reminder.formattedReminder)
+                                    .font(.system(size: 12))
                             }
-                            if let reminder = todo.reminder {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "bell")
-                                        .font(.system(size: 12))
-                                    Text(reminder.formattedReminder)
-                                        .font(.system(size: 12))
-                                }
-                                .foregroundColor(.textSecondary)
-                            }
+                            .foregroundColor(.textSecondary)
                         }
                     }
                 }
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isDragging ? Color.cardBackground : Color.clear)
-            )
-            .opacity(isDragging ? 0.6 : 1)
-            .scaleEffect(isDragging ? 0.98 : 1)
-            .contentShape(Rectangle())
-            .draggable(todo.id.uuidString) {
-                // Drag preview
-                DragPreview(title: todo.title)
-                    .onAppear {
-                        let generator = UIImpactFeedbackGenerator(style: .medium)
-                        generator.impactOccurred()
-                        onDragStart()
-                    }
-            }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isTargeted)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isDragging)
-    }
-}
-
-// MARK: - Drop Indicator Line
-
-struct DropIndicatorLine: View {
-    var body: some View {
-        HStack(spacing: 0) {
-            Circle()
-                .fill(Color.accentCyan)
-                .frame(width: 10, height: 10)
-
-            Rectangle()
-                .fill(Color.accentCyan)
-                .frame(height: 3)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .draggable(todo.id.uuidString) {
+            // Drag preview - the "peeled off" row
+            DragPreview(title: todo.title)
+                .onAppear {
+                    let generator = UIImpactFeedbackGenerator(style: .medium)
+                    generator.impactOccurred()
+                    onDragStart()
+                }
         }
-        .padding(.vertical, 6)
     }
 }
 
@@ -299,19 +261,22 @@ struct DragPreview: View {
     let title: String
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "line.3.horizontal")
-                .foregroundColor(.textSecondary)
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(Color.accentCyan, lineWidth: 2)
+                .frame(width: 22, height: 22)
+
             Text(title)
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(size: 16))
                 .foregroundColor(.textPrimary)
                 .lineLimit(1)
         }
+        .padding(.vertical, 12)
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .frame(width: 300, alignment: .leading)
         .background(Color.cardBackground)
         .cornerRadius(12)
-        .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
+        .shadow(color: .black.opacity(0.4), radius: 16, y: 8)
     }
 }
 
