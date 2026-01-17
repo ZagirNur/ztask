@@ -92,7 +92,7 @@ struct DropSection: View {
     let onToggle: (Todo) -> Void
     let onMove: (Todo) -> Void
 
-    @State private var isTargeted = false
+    @State private var dropIndex: Int? = nil
 
     private var headerColor: Color {
         switch section {
@@ -101,6 +101,10 @@ struct DropSection: View {
         case .nextWeek: return .nextWeekHeader
         case .later: return .laterHeader
         }
+    }
+
+    private var isTargeted: Bool {
+        dropIndex != nil
     }
 
     var body: some View {
@@ -124,66 +128,98 @@ struct DropSection: View {
             .padding(.top, 24)
             .padding(.bottom, 12)
 
-            // Todos
-            ForEach(todos) { todo in
+            // Todos with drop zones between them
+            ForEach(Array(todos.enumerated()), id: \.element.id) { index, todo in
                 let isDragging = draggingTodo?.id == todo.id
 
-                TodoRow(
-                    todo: todo,
-                    showDayLabel: showDayLabel,
-                    isDragging: isDragging,
-                    onToggle: { onToggle(todo) },
-                    onDragStart: { draggingTodo = todo },
-                    onDragEnd: { draggingTodo = nil }
-                )
-                // When this item is being dragged, collapse its space
-                .frame(height: isDragging ? 0 : nil)
-                .opacity(isDragging ? 0 : 1)
-                .clipped()
+                VStack(spacing: 0) {
+                    // Drop zone before this item
+                    if dropIndex == index && !isDragging {
+                        DropPlaceholder()
+                    }
+
+                    // The actual row
+                    if !isDragging {
+                        TodoRowWithDropZone(
+                            todo: todo,
+                            index: index,
+                            showDayLabel: showDayLabel,
+                            onToggle: { onToggle(todo) },
+                            onDragStart: { draggingTodo = todo }
+                        )
+                    }
+                }
             }
 
-            // Empty area for drop when section has no items
-            if todos.isEmpty {
+            // Drop zone at the end
+            if dropIndex == todos.count {
+                DropPlaceholder()
+            }
+
+            // Empty section placeholder
+            if todos.isEmpty && draggingTodo == nil {
                 Rectangle()
                     .fill(Color.clear)
-                    .frame(height: 44)
+                    .frame(height: 20)
             }
         }
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(isTargeted ? Color.accentCyan.opacity(0.1) : Color.clear)
+                .fill(isTargeted ? Color.accentCyan.opacity(0.08) : Color.clear)
         )
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: draggingTodo?.id)
-        .animation(.easeInOut(duration: 0.2), value: isTargeted)
-        .dropDestination(for: String.self) { items, _ in
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: dropIndex)
+        .dropDestination(for: String.self) { items, location in
             guard items.first != nil, let todo = draggingTodo else { return false }
 
             let generator = UIImpactFeedbackGenerator(style: .medium)
             generator.impactOccurred()
 
             onMove(todo)
+            dropIndex = nil
             draggingTodo = nil
             return true
         } isTargeted: { targeted in
-            if targeted && !isTargeted {
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
+            if !targeted {
+                dropIndex = nil
             }
-            isTargeted = targeted
         }
+        .onDrop(of: [.text], delegate: SectionDropDelegate(
+            todos: todos,
+            draggingTodo: draggingTodo,
+            dropIndex: $dropIndex,
+            onMove: onMove
+        ))
     }
 }
 
-// MARK: - Todo Row
+// MARK: - Drop Placeholder
 
-struct TodoRow: View {
+struct DropPlaceholder: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 10)
+            .fill(Color.accentCyan.opacity(0.15))
+            .frame(height: 50)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color.accentCyan.opacity(0.4), style: StrokeStyle(lineWidth: 2, dash: [6]))
+            )
+            .padding(.vertical, 4)
+            .transition(.asymmetric(
+                insertion: .scale(scale: 0.8).combined(with: .opacity),
+                removal: .scale(scale: 0.8).combined(with: .opacity)
+            ))
+    }
+}
+
+// MARK: - Todo Row With Drop Zone
+
+struct TodoRowWithDropZone: View {
     let todo: Todo
+    let index: Int
     let showDayLabel: Bool
-    let isDragging: Bool
     let onToggle: () -> Void
     let onDragStart: () -> Void
-    let onDragEnd: () -> Void
 
     private var isScheduled: Bool {
         todo.dueDate?.isInNextWeek ?? false
@@ -244,13 +280,72 @@ struct TodoRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .draggable(todo.id.uuidString) {
-            // Drag preview - the "peeled off" row
             DragPreview(title: todo.title)
                 .onAppear {
                     let generator = UIImpactFeedbackGenerator(style: .medium)
                     generator.impactOccurred()
                     onDragStart()
                 }
+        }
+    }
+}
+
+// MARK: - Section Drop Delegate
+
+struct SectionDropDelegate: DropDelegate {
+    let todos: [Todo]
+    let draggingTodo: Todo?
+    @Binding var dropIndex: Int?
+    let onMove: (Todo) -> Void
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        updateDropIndex(at: info.location)
+        return DropProposal(operation: .move)
+    }
+
+    func dropEntered(info: DropInfo) {
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+        updateDropIndex(at: info.location)
+    }
+
+    func dropExited(info: DropInfo) {
+        dropIndex = nil
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let todo = draggingTodo else { return false }
+
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+
+        onMove(todo)
+        dropIndex = nil
+        return true
+    }
+
+    private func updateDropIndex(at location: CGPoint) {
+        // Approximate row height
+        let rowHeight: CGFloat = 56
+        let headerHeight: CGFloat = 60
+
+        let y = location.y - headerHeight
+        var index = Int(y / rowHeight)
+
+        // Adjust for dragging todo if it's in this section
+        if let dragging = draggingTodo,
+           let draggingIndex = todos.firstIndex(where: { $0.id == dragging.id }) {
+            if index > draggingIndex {
+                index += 1
+            }
+        }
+
+        index = max(0, min(index, todos.count))
+
+        if dropIndex != index {
+            let generator = UIImpactFeedbackGenerator(style: .soft)
+            generator.impactOccurred()
+            dropIndex = index
         }
     }
 }
