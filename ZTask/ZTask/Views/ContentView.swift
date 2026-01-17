@@ -145,7 +145,8 @@ struct DropSection: View {
                             index: index,
                             showDayLabel: showDayLabel,
                             onToggle: { onToggle(todo) },
-                            onDragStart: { draggingTodo = todo }
+                            onDragStart: { draggingTodo = todo },
+                            onDragEnd: { draggingTodo = nil }
                         )
                     }
                 }
@@ -205,6 +206,7 @@ struct TodoRowWithDropZone: View {
     let showDayLabel: Bool
     let onToggle: () -> Void
     let onDragStart: () -> Void
+    let onDragEnd: () -> Void
 
     private var isScheduled: Bool {
         todo.dueDate?.isInNextWeek ?? false
@@ -265,7 +267,7 @@ struct TodoRowWithDropZone: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .draggable(todo.id.uuidString) {
-            DragPreview(title: todo.title)
+            DragPreview(title: todo.title, onDragEnd: onDragEnd)
                 .onAppear {
                     let generator = UIImpactFeedbackGenerator(style: .medium)
                     generator.impactOccurred()
@@ -340,6 +342,7 @@ struct SectionDropDelegate: DropDelegate {
 
 struct DragPreview: View {
     let title: String
+    let onDragEnd: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -358,6 +361,10 @@ struct DragPreview: View {
         .background(Color.cardBackground)
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.4), radius: 16, y: 8)
+        .onDisappear {
+            // Reset dragging state when drag preview disappears (drag cancelled or completed)
+            onDragEnd()
+        }
     }
 }
 
